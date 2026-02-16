@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,30 +66,37 @@ func (e *Engine) ScanPage(url string, verbose bool) ([]string, error) {
 		mu.Unlock()
 	}
 
-	// Set up event listeners for this specific target
+	// Set up event listeners BEFORE we run the navigation
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
-		switch e := ev.(type) {
+		switch ev := ev.(type) {
 		case *runtime.EventExceptionThrown:
-			addErr(fmt.Sprintf("JS Exception: %s", e.ExceptionDetails.Text))
+			addErr(fmt.Sprintf("JS Exception: %s", ev.ExceptionDetails.Text))
 		case *runtime.EventConsoleAPICalled:
-			if e.Type == runtime.APITypeError {
+			if ev.Type == runtime.APITypeError {
 				var msg string
-				if len(e.Args) > 0 && e.Args[0].Value != nil {
-					msg = fmt.Sprintf("%v", e.Args[0].Value)
+				for _, arg := range ev.Args {
+					if arg.Value != nil {
+						msg += fmt.Sprintf("%v ", arg.Value)
+					}
 				}
-				addErr(fmt.Sprintf("Console Error: %s", msg))
+				addErr(fmt.Sprintf("Console Error: %s", strings.TrimSpace(msg)))
 			}
 		case *network.EventLoadingFailed:
-			addErr(fmt.Sprintf("Network Failure: %s (%s)", e.ErrorText, e.Type))
+			// Optionally ignore canceled requests (e.g., if JS aborts a fetch)
+			if ev.Canceled {
+				return
+			}
+			addErr(fmt.Sprintf("Network Failure: %s (%s)", ev.ErrorText, ev.Type))
 		}
 	})
 
-	// Execute scan
+	// Execute scan: Enable domains, Navigate, Wait, and Settle
 	err := chromedp.Run(ctx,
 		network.Enable(),
+		runtime.Enable(),
 		chromedp.Navigate(url),
-		chromedp.WaitReady("body"),
-		chromedp.Sleep(1*time.Second), // Slightly reduced for speed in concurrent mode
+		chromedp.WaitVisible("body", chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second), // Settle period for async JS/Network errors
 	)
 
 	if err != nil {

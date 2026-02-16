@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- The Fix: Debugging the "Sniffer":
+  - Ensured `chromedp.ListenTarget` is called before navigation.
+  - Added `runtime.Enable()` to catch more asynchronous JavaScript errors.
+  - Increased settle period to 2 seconds to allow background errors to trigger.
+  - Improved console error capturing to include all message arguments.
+  - Switched to `chromedp.WaitVisible` for body rendering confirmation.
+  - Added cancellation check for network failures to reduce noise.
+
 ### Added
 - Final Polish (Part 5):
   - Integrated `pterm` for a professional summary table.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
@@ -29,6 +30,7 @@ func NewEngine() *Engine {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.NoSandbox,
 		chromedp.DisableGPU,
+		chromedp.Flag("disable-dev-shm-usage", true),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	
@@ -64,23 +66,45 @@ func (e *Engine) ScanPage(url string, verbose bool) ([]string, error) {
 		mu.Lock()
 		errors = append(errors, msg)
 		mu.Unlock()
+		if verbose {
+			fmt.Printf("\n[DEBUG] Listener caught error: %s\n", msg)
+		}
 	}
 
 	// Set up event listeners BEFORE we run the navigation
 	chromedp.ListenTarget(ctx, func(ev interface{}) {
 		switch ev := ev.(type) {
 		case *runtime.EventExceptionThrown:
-			addErr(fmt.Sprintf("JS Exception: %s", ev.ExceptionDetails.Text))
-		case *runtime.EventConsoleAPICalled:
-			if ev.Type == runtime.APITypeError {
-				var msg string
-				for _, arg := range ev.Args {
-					if arg.Value != nil {
-						msg += fmt.Sprintf("%v ", arg.Value)
-					}
-				}
-				addErr(fmt.Sprintf("Console Error: %s", strings.TrimSpace(msg)))
+			msg := ev.ExceptionDetails.Text
+			if ev.ExceptionDetails.Exception != nil && ev.ExceptionDetails.Exception.Description != "" {
+				msg = ev.ExceptionDetails.Exception.Description
 			}
+			addErr(fmt.Sprintf("JS Exception: %s", msg))
+
+		case *runtime.EventConsoleAPICalled:
+			var msg string
+			for _, arg := range ev.Args {
+				if arg.Value != nil {
+					msg += fmt.Sprintf("%v ", arg.Value)
+				} else if arg.Description != "" {
+					msg += fmt.Sprintf("%s ", arg.Description)
+				}
+			}
+			msg = strings.TrimSpace(msg)
+			
+			if verbose {
+				fmt.Printf("\n[DEBUG] Console %s: %s\n", ev.Type, msg)
+			}
+
+			if ev.Type == runtime.APITypeError {
+				addErr(fmt.Sprintf("Console Error: %s", msg))
+			}
+
+		case *network.EventResponseReceived:
+			if ev.Response.Status >= 400 {
+				addErr(fmt.Sprintf("HTTP Error %d: %s", ev.Response.Status, ev.Response.URL))
+			}
+
 		case *network.EventLoadingFailed:
 			// Optionally ignore canceled requests (e.g., if JS aborts a fetch)
 			if ev.Canceled {
@@ -90,11 +114,34 @@ func (e *Engine) ScanPage(url string, verbose bool) ([]string, error) {
 		}
 	})
 
+	// Wait for the page load event
+	loadEventChan := make(chan struct{})
+	chromedp.ListenTarget(ctx, func(ev interface{}) {
+		if _, ok := ev.(*page.EventLoadEventFired); ok {
+			// Check if channel is already closed to avoid panic
+			select {
+			case <-loadEventChan:
+			default:
+				close(loadEventChan)
+			}
+		}
+	})
+
 	// Execute scan: Enable domains, Navigate, Wait, and Settle
 	err := chromedp.Run(ctx,
 		network.Enable(),
 		runtime.Enable(),
+		page.Enable(),
 		chromedp.Navigate(url),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			// Wait for load event or context timeout
+			select {
+			case <-loadEventChan:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}),
 		chromedp.WaitVisible("body", chromedp.ByQuery),
 		chromedp.Sleep(2*time.Second), // Settle period for async JS/Network errors
 	)
@@ -103,7 +150,12 @@ func (e *Engine) ScanPage(url string, verbose bool) ([]string, error) {
 		return nil, err
 	}
 
-	return errors, nil
+	mu.Lock()
+	defer mu.Unlock()
+	// Return a copy to avoid race conditions with lingering events
+	res := make([]string, len(errors))
+	copy(res, errors)
+	return res, nil
 }
 
 // ExtractLinks finds all <a> tags and returns their href attributes

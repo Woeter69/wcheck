@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- The Deep Fix: Thread Safety & Context Cancellation:
+  - Wrapped error reporting in `sync.Mutex` to prevent race conditions.
+  - Implemented explicit `page.EventLoadEventFired` synchronization using a channel and `chromedp.ActionFunc`.
+  - Added immediate `[DEBUG]` terminal output when listeners catch an error (requires `--verbose`).
+  - Added `disable-dev-shm-usage` flag to the browser allocator for improved headless stability on Linux.
+  - Explicitly enabled the `Page` domain in `chromedp`.
 - The Fix: Debugging the "Sniffer":
   - Ensured `chromedp.ListenTarget` is called before navigation.
   - Added `runtime.Enable()` to catch more asynchronous JavaScript errors.

@@ -57,7 +57,3 @@ Keep your production site safe with a pre-push hook.
    ```
 
 2. Every time you run `git push`, `wcheck` will scan your local dev server and abort the push if any errors are found.
-
-## License
-
-MIT

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -14,6 +16,7 @@ import (
 var (
 	workers int
 	verbose bool
+	timeout int
 )
 
 var scanCmd = &cobra.Command{
@@ -23,14 +26,14 @@ var scanCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		start := time.Now()
 		targetURL := args[0]
-		
+
 		reporter.PrintDebug(verbose, "Initializing engine for %s with %d workers", targetURL, workers)
-		
+
 		eng := engine.NewEngine()
 		defer eng.Close()
 
 		c := crawler.NewCrawler(targetURL, eng)
-		links, err := c.GetLinks()
+		links, err := c.GetLinks(time.Duration(timeout)*time.Second, verbose)
 		if err != nil {
 			reporter.PrintError("Failed to get links: %v", err)
 			os.Exit(1)
@@ -49,10 +52,17 @@ var scanCmd = &cobra.Command{
 				defer wg.Done()
 				for link := range jobs {
 					reporter.PrintDebug(verbose, "[Worker %d] Scanning %s...", workerID, link)
-					errors, err := eng.ScanPage(link, verbose)
+					errors, err := eng.ScanPage(link, verbose, time.Duration(timeout)*time.Second)
 					if err != nil {
-						reporter.PrintError("[Worker %d] Scan failed for %s: %v", workerID, link, err)
-						resultsChan <- engine.ScanResult{URL: link, Errors: []string{err.Error()}}
+						msg := err.Error()
+						if err == context.DeadlineExceeded {
+							msg = fmt.Sprintf("⌛ Page load timed out after %ds", timeout)
+						}
+						reporter.PrintError("[Worker %d] Scan failed for %s: %s", workerID, link, msg)
+						resultsChan <- engine.ScanResult{URL: link, Errors: []engine.PageError{{
+							Type:    engine.TypeErrorNetwork,
+							Message: msg,
+						}}}
 						continue
 					}
 					resultsChan <- engine.ScanResult{URL: link, Errors: errors}
@@ -84,7 +94,7 @@ var scanCmd = &cobra.Command{
 			}
 		}
 
-		reporter.PrintSummary(allResults, time.Since(start))
+		reporter.PrintSummary(allResults, time.Since(start), verbose)
 
 		if hasErrors {
 			os.Exit(1)
@@ -97,4 +107,5 @@ func RegisterCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(scanCmd)
 	scanCmd.Flags().IntVarP(&workers, "workers", "w", 5, "Number of parallel workers")
 	scanCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	scanCmd.Flags().IntVarP(&timeout, "timeout", "t", 30, "Timeout in seconds for each page scan")
 }

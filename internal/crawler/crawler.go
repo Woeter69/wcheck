@@ -3,6 +3,7 @@ package crawler
 import (
 	"net/url"
 	"strings"
+	"time"
 	"wcheck/internal/engine"
 )
 
@@ -21,8 +22,8 @@ func NewCrawler(baseURL string, eng *engine.Engine) *Crawler {
 }
 
 // GetLinks returns a list of unique internal links found on the base URL
-func (c *Crawler) GetLinks() ([]string, error) {
-	rawHrefs, err := c.Engine.ExtractLinks(c.BaseURL)
+func (c *Crawler) GetLinks(timeout time.Duration, verbose bool) ([]string, error) {
+	rawHrefs, err := c.Engine.ExtractLinks(c.BaseURL, timeout, verbose)
 	if err != nil {
 		return nil, err
 	}

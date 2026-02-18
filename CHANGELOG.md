@@ -20,19 +20,27 @@ All notable changes to this project will be documented in this file.
   - Added cancellation check for network failures to reduce noise.
 
 ### Added
-- Final Polish (Part 5):
-  - Integrated `pterm` for a professional summary table.
-  - Added total scan time tracking.
-  - Implemented proper exit codes (1 on failure, 0 on success).
-  - Standardized logging with a structured reporter.
-- Implemented Worker Pool Pattern (Part 4) for concurrent scanning.
-- Spawned multiple worker goroutines based on the `--workers` flag.
-- Integrated `sync.WaitGroup` and channels for thread-safe job orchestration.
-- Added per-worker debug logging.
-- Implemented Link Discovery (Part 3).
-- Added `ExtractLinks` method to `Engine` to retrieve anchor tags from pages.
-- Added `Crawler` logic to resolve relative URLs, filter external domains, and deduplicate links.
-- Added verbose output for discovered links.
+- **Detailed Error Reporting & Deep Dive:**
+  - Implemented `PageError` structure to capture JS stack traces, line numbers, and error types.
+  - Added a "DEEP DIVE: ERROR DETAILS" section to the final report with color-coded errors (Red for JS, Yellow for Console, Cyan for Network).
+  - Enabled **Asynchronous Stack Traces** via the Chrome debugger domain to track errors across `setTimeout` and promises.
+- **Flexible Timeout Control:**
+  - Added `--timeout` (or `-t`) flag to the `scan` command for per-page load control.
+  - Implemented graceful timeout reporting (`⌛ Page load timed out after [N]s`).
+- **Resilient Link Discovery (Scout):**
+  - Updated link extraction to use a 45s minimum timeout regardless of global settings.
+  - Implemented a fallback strategy: if a page body fails to appear, the crawler still attempts to extract links from the partial DOM.
+  - Added verbose logging for the "Scout" phase (`Scout is waiting for body to appear...`).
+
+### Changed
+- **Smarter Waiting Strategy:**
+  - Replaced rigid `time.Sleep` with `chromedp.WaitReady` and `WaitVisible` for more efficient page settling.
+  - Refined console error extraction to remove unnecessary quotes and improve readability.
+  - Updated `GetLinks` and `ScanPage` signatures to support dynamic timeouts.
+
+### Fixed
+- Fixed JS exception messages that were duplicating stack traces in the description.
+- Resolved "context deadline exceeded" errors on heavy pages by decoupling crawler and worker timeouts.
 
 ### Changed
 - Refactored the project structure to better separate concerns.

@@ -20,6 +20,34 @@ All notable changes to this project will be documented in this file.
   - Added cancellation check for network failures to reduce noise.
 
 ### Added
+- **Smarter Interaction Monkey:**
+  - **Refined Selection:** Now only targets likely interactive elements (`button`, `a`, `.btn`, etc.) and ignores decorative `svg` or `span` elements.
+  - **Deduplication:** Automatically skips redundant elements with the same text (e.g., duplicate mobile/desktop menus).
+  - **Pre-Click Validation:** Uses JavaScript to verify `cursor: pointer` and element visibility before attempting interaction.
+  - **Performance Optimization:** Tightened per-click timeouts to 3 seconds and reduced post-click wait times for faster sessions.
+  - **Reduced Noise:** Removed repetitive failure logs, focusing only on real caught exceptions.
+
+- **Rate-Limiting Resilience:**
+  - **Worker Delay:** Added `--delay` (or `-d`) flag to `scan` and `interact` commands to introduce a sleep between page scans, avoiding rate limits.
+  - **Retry Logic:** Workers now automatically retry a page scan once after a 5-second sleep if they encounter a timeout (`context.DeadlineExceeded`) or a `429 Too Many Requests` error.
+  - **Connection Limits:** Restricted Chrome to 2 connections per browser via `max-connection-per-browser` flag for reduced host impact.
+  - **Faster Extraction:** Switched from `WaitVisible` to `WaitReady` for link discovery, returning as soon as the DOM is ready.
+  - **429 Detection:** The network listener now explicitly identifies and reports `429` status codes.
+
+- **The Interaction Monkey (`interact` command):**
+  - New `wcheck interact <URL>` command for targeted interaction testing.
+  - **Discovery Engine:** Automatically finds all `button`, `a`, `[role="button"]`, and elements with `cursor: pointer` via JS evaluation.
+  - **The "Monkey" Logic:**
+    - Scrolls elements into view before interacting.
+    - Performs automated `chromedp.Click`.
+    - **Safety Filter:** Blacklists sensitive keywords (`logout`, `delete`, `remove`, `sign out`) to prevent accidental session termination or data loss.
+    - **State Reset:** Automatically navigates back to the original URL after each click to ensure state consistency.
+    - **Limit Control:** Added `--max-clicks` flag (default 20) to prevent infinite loops on complex pages.
+  - **Detailed Interaction Reporting:**
+    - New `FAILED INTERACTIONS` section in the reporter.
+    - Captures exactly which element (by Text, ID, or XPath) caused a crash.
+    - Re-categorizes JS exceptions and console errors as "Broken Interaction" when triggered during the interaction phase.
+
 - **Detailed Error Reporting & Deep Dive:**
   - Implemented `PageError` structure to capture JS stack traces, line numbers, and error types.
   - Added a "DEEP DIVE: ERROR DETAILS" section to the final report with color-coded errors (Red for JS, Yellow for Console, Cyan for Network).

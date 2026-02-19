@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 	"wcheck/internal/crawler"
@@ -14,9 +15,12 @@ import (
 )
 
 var (
-	workers int
-	verbose bool
-	timeout int
+	workers   int
+	verbose   bool
+	timeout   int
+	interact  bool
+	maxClicks int
+	delay     int
 )
 
 var scanCmd = &cobra.Command{
@@ -51,8 +55,24 @@ var scanCmd = &cobra.Command{
 			go func(workerID int) {
 				defer wg.Done()
 				for link := range jobs {
+					// Wait for the specified delay between scans
+					if delay > 0 {
+						time.Sleep(time.Duration(delay) * time.Second)
+					}
+
 					reporter.PrintDebug(verbose, "[Worker %d] Scanning %s...", workerID, link)
-					errors, err := eng.ScanPage(link, verbose, time.Duration(timeout)*time.Second)
+
+					// Retry logic: try once, then retry if failure is timeout or 429
+					errors, err := eng.ScanPage(link, verbose, time.Duration(timeout)*time.Second, interact, maxClicks)
+					if err != nil || hasRateLimit(errors) {
+						if err == context.DeadlineExceeded || hasRateLimit(errors) {
+							retryDelay := 5
+							reporter.PrintDebug(verbose, "[Worker %d] Retrying %s after %ds sleep...", workerID, link, retryDelay)
+							time.Sleep(time.Duration(retryDelay) * time.Second)
+							errors, err = eng.ScanPage(link, verbose, time.Duration(timeout)*time.Second, interact, maxClicks)
+						}
+					}
+
 					if err != nil {
 						msg := err.Error()
 						if err == context.DeadlineExceeded {
@@ -102,10 +122,24 @@ var scanCmd = &cobra.Command{
 	},
 }
 
-// RegisterCommands adds scanCmd to the root command
+// RegisterCommands adds scanCmd and other commands to the root command
 func RegisterCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(scanCmd)
 	scanCmd.Flags().IntVarP(&workers, "workers", "w", 5, "Number of parallel workers")
 	scanCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
 	scanCmd.Flags().IntVarP(&timeout, "timeout", "t", 30, "Timeout in seconds for each page scan")
+	scanCmd.Flags().BoolVarP(&interact, "interact", "i", false, "Enable automatic interaction testing")
+	scanCmd.Flags().IntVarP(&maxClicks, "max-clicks", "m", 20, "Maximum number of elements to click on each page")
+	scanCmd.Flags().IntVarP(&delay, "delay", "d", 0, "Delay in seconds between page scans")
+
+	RegisterInteract(rootCmd)
+}
+
+func hasRateLimit(errors []engine.PageError) bool {
+	for _, e := range errors {
+		if e.Type == engine.TypeErrorNetwork && strings.Contains(e.Message, "429") {
+			return true
+		}
+	}
+	return false
 }

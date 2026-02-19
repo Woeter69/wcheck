@@ -61,33 +61,63 @@ func PrintSummary(results []engine.ScanResult, duration time.Duration, verbose b
 
 		for _, res := range failedResults {
 			pterm.DefaultSection.Printf("Errors for %s", res.URL)
+			
+			// Group interactions if any
+			var interactionErrors []engine.PageError
+			var otherErrors []engine.PageError
+			
 			for _, err := range res.Errors {
-				var prefix string
-				var msgStyle *pterm.Style
-
-				switch err.Type {
-				case engine.TypeErrorJS:
-					prefix = "❌ JS Exception:"
-					msgStyle = pterm.NewStyle(pterm.FgRed)
-				case engine.TypeErrorConsole:
-					prefix = "⚠️ Console Error:"
-					msgStyle = pterm.NewStyle(pterm.FgYellow)
-				case engine.TypeErrorNetwork:
-					prefix = "🚫 Network Error:"
-					msgStyle = pterm.NewStyle(pterm.FgCyan)
-				default:
-					prefix = "❓ Unknown Error:"
-					msgStyle = pterm.NewStyle(pterm.FgGray)
+				if err.Type == engine.TypeErrorInteraction {
+					interactionErrors = append(interactionErrors, err)
+				} else {
+					otherErrors = append(otherErrors, err)
 				}
+			}
 
-				pterm.Printf("%s %s\n", msgStyle.Sprint(prefix), err.Message)
-
-				if err.StackTrace != "" {
-					pterm.Println(pterm.Gray(err.StackTrace))
-				} else if verbose && err.URL != "" {
-					pterm.Printf("   at %s:%d\n", pterm.Gray(err.URL), err.Line)
+			if len(interactionErrors) > 0 {
+				pterm.DefaultHeader.WithFullWidth(false).Println("FAILED INTERACTIONS")
+				for _, err := range interactionErrors {
+					pterm.Printf("💥 %s [%s]\n", pterm.Magenta("Broken Interaction:"), pterm.Bold.Sprint(err.ElementInfo))
+					pterm.Printf("   Reason: %s\n", pterm.Red(err.Message))
+					if err.StackTrace != "" {
+						pterm.Println(pterm.Gray(err.StackTrace))
+					}
+					pterm.Println()
 				}
-				pterm.Println()
+			}
+
+			if len(otherErrors) > 0 {
+				if len(interactionErrors) > 0 {
+					pterm.DefaultHeader.WithFullWidth(false).Println("OTHER ERRORS")
+				}
+				for _, err := range otherErrors {
+					var prefix string
+					var msgStyle *pterm.Style
+
+					switch err.Type {
+					case engine.TypeErrorJS:
+						prefix = "❌ JS Exception:"
+						msgStyle = pterm.NewStyle(pterm.FgRed)
+					case engine.TypeErrorConsole:
+						prefix = "⚠️ Console Error:"
+						msgStyle = pterm.NewStyle(pterm.FgYellow)
+					case engine.TypeErrorNetwork:
+						prefix = "🚫 Network Error:"
+						msgStyle = pterm.NewStyle(pterm.FgCyan)
+					default:
+						prefix = "❓ Unknown Error:"
+						msgStyle = pterm.NewStyle(pterm.FgGray)
+					}
+
+					pterm.Printf("%s %s\n", msgStyle.Sprint(prefix), err.Message)
+
+					if err.StackTrace != "" {
+						pterm.Println(pterm.Gray(err.StackTrace))
+					} else if verbose && err.URL != "" {
+						pterm.Printf("   at %s:%d\n", pterm.Gray(err.URL), err.Line)
+					}
+					pterm.Println()
+				}
 			}
 		}
 	}

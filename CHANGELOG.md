@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Professional Documentation Suite:**
+  - `README.md`: New sleek project overview and feature highlights.
+  - `INSTALL.md`: Detailed installation instructions for various platforms (including Arch Linux) and source builds.
+  - `USAGE.md`: Comprehensive breakdown of all CLI flags, commands, and CI/CD integration examples (Git Hooks).
+  - `CONTRIBUTING.md`: Developer-focused guide on project structure and workflow.
+
 ### Fixed
 - The Deep Fix: Thread Safety & Context Cancellation:
   - Wrapped error reporting in `sync.Mutex` to prevent race conditions.

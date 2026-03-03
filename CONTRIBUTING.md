@@ -1,34 +1,33 @@
 # Contributing to wcheck
 
-Thank you for your interest in improving `wcheck`!
+Thank you for your interest in improving `wcheck`! We welcome contributions from the community.
 
 ## Project Structure
-- `main.go`: Entry point for the CLI.
-- `cmd/`: Command definitions (Cobra).
-  - `scan.go`: Bulk scanning and worker pool logic.
-  - `interact.go`: Single-page interaction logic.
-- `internal/`: Core logic (private to this module).
-  - `engine/`: `chromedp` implementation and error sniffing.
-  - `crawler/`: Internal link discovery logic.
-  - `reporter/`: Terminal output and formatting.
 
-## Development Workflow
-1. **Prerequisites:** Go 1.21+ and Chromium.
-2. **Setup:**
-   ```bash
-   go mod tidy
-   ```
-3. **Run during development:**
-   ```bash
-   go run main.go scan http://localhost:3000
-   ```
-4. **Testing:**
-   Ensure your changes don't break the build:
-   ```bash
-   make build
-   ```
+- `cmd/`: CLI command definitions (Cobra).
+- `internal/engine/`: Core headless browser logic and interaction monkey.
+- `internal/crawler/`: Link discovery and site scouting.
+- `internal/reporter/`: Pretty CLI reporting and table generation.
+- `tests/`: Integration tests for scanner logic.
 
-## Guidelines
-- Follow standard Go idioms and `gofmt`.
-- Ensure all new features are accompanied by appropriate flags in `cmd/`.
-- Maintain the minimalist, high-signal reporting style.
+## Workflow
+
+1.  **Fork and Clone:** Create a feature branch.
+2.  **Go Version:** Ensure you are using Go 1.23+.
+3.  **Run Tests:** Always verify your changes before submitting:
+    ```bash
+    go test ./... -v
+    go test ./tests/... -v
+    ```
+4.  **Linting:** Follow standard Go idioms (`gofmt`).
+5.  **Submit PR:** Provide a clear description of the fix or feature.
+
+## Development Tips
+
+- Use the `--verbose` flag when debugging interaction monkey logic.
+- Use `httptest` for mocking web servers in new tests.
+- Always check for potential race conditions when modifying parallel worker logic.
+
+## Feedback
+
+Found a bug or have a feature request? Please open an issue on GitHub.

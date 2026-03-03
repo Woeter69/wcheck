@@ -1,36 +1,50 @@
 # Installation Guide
 
-`wcheck` is built with Go and requires a Chromium-based browser to operate.
+`wcheck` is built with Go and requires a Chromium-based browser (Chrome, Chromium, or Brave) installed on your system to operate.
 
-## Dependencies
-Ensure you have `chromium` or `google-chrome` installed on your system.
+## Prerequisites
 
-### Arch Linux
+- **Go:** Version 1.23 or higher.
+- **Chrome/Chromium:** Required for headless execution.
+
+### Arch Linux (Pacman)
+
+On Arch Linux, you can install the necessary requirements using `pacman`:
+
 ```bash
-sudo pacman -S chromium
+sudo pacman -S chromium go make
 ```
 
-## Build from Source
-1. **Clone the repository:**
+### Ubuntu/Debian
+
+```bash
+sudo apt-get update
+sudo apt-get install -y google-chrome-stable golang-go make
+```
+
+## Install from Source
+
+1. Clone the repository:
    ```bash
    git clone https://github.com/Woeter69/wcheck.git
    cd wcheck
    ```
 
-2. **Download dependencies:**
+2. Build the binary:
    ```bash
-   go mod download
+   make build
    ```
 
-3. **Install:**
-   The included `Makefile` handles the build and system installation.
+3. Install to your system path:
    ```bash
-   make install
+   sudo make install
    ```
-   *Note: This will build the binary and move it to `/usr/local/bin` using `sudo`.*
 
-## Verification
-Verify the installation by checking the version or help menu:
+## Verify Installation
+
+Check if the tool is installed and accessible:
+
 ```bash
+wcheck --version
 wcheck --help
 ```

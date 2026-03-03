@@ -2,63 +2,52 @@
 
 `wcheck` provides two main commands: `scan` for crawling/bulk auditing and `interact` for deep-diving into a single page.
 
-## Command: `scan`
-The `scan` command crawls the target URL for internal links and audits them concurrently.
+## Core Commands
 
-### Flags
-| Flag | Shorthand | Default | Description |
-|------|-----------|---------|-------------|
-| `--workers` | `-w` | `5` | Number of parallel browser instances. |
-| `--timeout` | `-t` | `30` | Timeout in seconds for each page scan. |
-| `--interact` | `-i` | `false` | Enable automatic "Monkey Testing" (clicking elements). |
-| `--max-clicks`| `-m` | `20` | Max interactive elements to click per page. |
-| `--delay` | `-d` | `0` | Delay in seconds between scans (useful for rate-limiting). |
-| `--verbose` | `-v` | `false` | Enable detailed debug logging. |
+### `wcheck scan <URL>`
+The primary audit command. It crawls internal links and visits each page using parallel workers.
 
-### Example
 ```bash
+# Basic scan
+wcheck scan http://localhost:3000
+
+# Scan with parallel workers and interaction monkey enabled
 wcheck scan http://localhost:3000 --workers 10 --interact
+
+# Scan with custom timeout (default 30s)
+wcheck scan http://localhost:3000 --timeout 60
 ```
 
----
-
-## Command: `interact`
-Focuses on a single page and performs an exhaustive interaction test.
-
-### Flags
-- `-t, --timeout`: Default `60` (longer for deep interaction).
-- `-m, --max-clicks`: Default `20`.
-- `-v, --verbose`: View every interaction step.
+### `wcheck interact <URL>`
+Targets a single page for heavy interaction testing. Ideal for debugging state-heavy React/Next.js pages.
 
 ```bash
-wcheck interact http://localhost:3000/dashboard -v
+# Interact with a specific page (dashboard) with verbose logging
+wcheck interact http://localhost:3000/dashboard -v --max-clicks 50
 ```
 
----
+## Important Flags
+
+### `--workers` | `-w`
+Sets the number of parallel browser workers.
+- **Default:** 5
+- **Advice:** Increase for faster bulk scans (e.g., 10-20), but avoid overloading local development servers.
+
+### `--delay` | `-d`
+Adds a wait time (in seconds) between each page visit.
+- **Default:** 0
+- **Advice:** Useful for avoiding rate limits (429 Too Many Requests) on production sites.
+
+### `--interact` | `-i`
+Enables the "Smarter Monkey" interaction phase on every discovered page.
+
+### `--verbose` | `-v`
+Enables detailed debug logging, showing coordinates for clicks and real-time capture of network/JS events.
 
 ## CI/CD Integration
 
-### Exit Codes
-`wcheck` is designed for automation:
-- **0**: Scan complete with zero browser/network errors.
-- **1**: Errors detected (JS exceptions, failed assets, or timeouts).
-
-### Git Pre-Push Hook
-Prevent broken code from reaching the server by adding `wcheck` to your hooks.
-Create or edit `.git/hooks/pre-push`:
+Use the exit code to fail builds if errors are found:
 
 ```bash
-#!/bin/bash
-echo "Running wcheck audit..."
-wcheck scan http://localhost:3000 -i -w 10
-if [ $? -ne 0 ]; then
- echo "Audit failed. Please fix the errors before pushing."
- exit 1
-fi
+wcheck scan http://localhost:3000 -i || exit 1
 ```
-
-## Deep Dive Reporting
-The reporter categorizes errors into:
-- **JS Error**: Uncaught exceptions in the browser.
-- **Console**: `console.error` calls from the application.
-- **Network**: Assets (JS, CSS, Images) that failed to load (404/500).

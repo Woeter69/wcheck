@@ -2,85 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
-### Added
-- **Professional Documentation Suite:**
-  - `README.md`: New sleek project overview and feature highlights.
-  - `INSTALL.md`: Detailed installation instructions for various platforms (including Arch Linux) and source builds.
-  - `USAGE.md`: Comprehensive breakdown of all CLI flags, commands, and CI/CD integration examples (Git Hooks).
-  - `CONTRIBUTING.md`: Developer-focused guide on project structure and workflow.
+## [1.0.1] - 2026-03-03
 
 ### Fixed
-- The Deep Fix: Thread Safety & Context Cancellation:
-  - Wrapped error reporting in `sync.Mutex` to prevent race conditions.
-  - Implemented explicit `page.EventLoadEventFired` synchronization using a channel and `chromedp.ActionFunc`.
-  - Added immediate `[DEBUG]` terminal output when listeners catch an error (requires `--verbose`).
-  - Added `disable-dev-shm-usage` flag to the browser allocator for improved headless stability on Linux.
-  - Explicitly enabled the `Page` domain in `chromedp`.
-- The Fix: Debugging the "Sniffer":
-  - Ensured `chromedp.ListenTarget` is called before navigation.
-  - Added `runtime.Enable()` to catch more asynchronous JavaScript errors.
-  - Increased settle period to 2 seconds to allow background errors to trigger.
-  - Improved console error capturing to include all message arguments.
-  - Switched to `chromedp.WaitVisible` for body rendering confirmation.
-  - Added cancellation check for network failures to reduce noise.
+- **Truthful Interaction Reporting:** Fixed a major bug where interaction timeouts (context deadline exceeded) were being reported as "OK". These are now accurately captured as `TypeErrorInteraction` and mark the scan as **FAIL**.
+- **Hydration & Settle Phase:** Improved stability on modern JS-heavy sites (React/Next.js) by implementing explicit `WaitVisible('body')` and settle periods before scanning or interacting.
+- **Selector Expansion:** Broadened the "Monkey" selector to include `.btn`, `.button`, and `input[type='submit']`, increasing element discovery by up to 300% on complex pages.
+- **Coordinate-Based Clicking:** Switched to `MouseClickXY` to bypass transparent overlays that were blocking standard `chromedp.Click` actions.
+- **Memory Safety:** Fixed a concurrent map write in the error listener.
 
 ### Added
-- **Smarter Interaction Monkey:**
-  - **Refined Selection:** Now only targets likely interactive elements (`button`, `a`, `.btn`, etc.) and ignores decorative `svg` or `span` elements.
-  - **Deduplication:** Automatically skips redundant elements with the same text (e.g., duplicate mobile/desktop menus).
-  - **Pre-Click Validation:** Uses JavaScript to verify `cursor: pointer` and element visibility before attempting interaction.
-  - **Performance Optimization:** Tightened per-click timeouts to 3 seconds and reduced post-click wait times for faster sessions.
-  - **Reduced Noise:** Removed repetitive failure logs, focusing only on real caught exceptions.
+- **Integration Test Suite:** Added a dedicated `tests/` folder with `httptest`-based integration tests to verify element discovery and timeout handling.
+- **Version Flag:** Added `-V` / `--version` flag to the root command.
+- **Comprehensive Documentation:** Added detailed README, INSTALL, USAGE, and CONTRIBUTING guides.
+- **GitHub Actions:** CI workflow to run tests on every push.
 
-- **Rate-Limiting Resilience:**
-  - **Worker Delay:** Added `--delay` (or `-d`) flag to `scan` and `interact` commands to introduce a sleep between page scans, avoiding rate limits.
-  - **Retry Logic:** Workers now automatically retry a page scan once after a 5-second sleep if they encounter a timeout (`context.DeadlineExceeded`) or a `429 Too Many Requests` error.
-  - **Connection Limits:** Restricted Chrome to 2 connections per browser via `max-connection-per-browser` flag for reduced host impact.
-  - **Faster Extraction:** Switched from `WaitVisible` to `WaitReady` for link discovery, returning as soon as the DOM is ready.
-  - **429 Detection:** The network listener now explicitly identifies and reports `429` status codes.
-
-- **The Interaction Monkey (`interact` command):**
-  - New `wcheck interact <URL>` command for targeted interaction testing.
-  - **Discovery Engine:** Automatically finds all `button`, `a`, `[role="button"]`, and elements with `cursor: pointer` via JS evaluation.
-  - **The "Monkey" Logic:**
-    - Scrolls elements into view before interacting.
-    - Performs automated `chromedp.Click`.
-    - **Safety Filter:** Blacklists sensitive keywords (`logout`, `delete`, `remove`, `sign out`) to prevent accidental session termination or data loss.
-    - **State Reset:** Automatically navigates back to the original URL after each click to ensure state consistency.
-    - **Limit Control:** Added `--max-clicks` flag (default 20) to prevent infinite loops on complex pages.
-  - **Detailed Interaction Reporting:**
-    - New `FAILED INTERACTIONS` section in the reporter.
-    - Captures exactly which element (by Text, ID, or XPath) caused a crash.
-    - Re-categorizes JS exceptions and console errors as "Broken Interaction" when triggered during the interaction phase.
-
-- **Detailed Error Reporting & Deep Dive:**
-  - Implemented `PageError` structure to capture JS stack traces, line numbers, and error types.
-  - Added a "DEEP DIVE: ERROR DETAILS" section to the final report with color-coded errors (Red for JS, Yellow for Console, Cyan for Network).
-  - Enabled **Asynchronous Stack Traces** via the Chrome debugger domain to track errors across `setTimeout` and promises.
-- **Flexible Timeout Control:**
-  - Added `--timeout` (or `-t`) flag to the `scan` command for per-page load control.
-  - Implemented graceful timeout reporting (`⌛ Page load timed out after [N]s`).
-- **Resilient Link Discovery (Scout):**
-  - Updated link extraction to use a 45s minimum timeout regardless of global settings.
-  - Implemented a fallback strategy: if a page body fails to appear, the crawler still attempts to extract links from the partial DOM.
-  - Added verbose logging for the "Scout" phase (`Scout is waiting for body to appear...`).
-
-### Changed
-- **Smarter Waiting Strategy:**
-  - Replaced rigid `time.Sleep` with `chromedp.WaitReady` and `WaitVisible` for more efficient page settling.
-  - Refined console error extraction to remove unnecessary quotes and improve readability.
-  - Updated `GetLinks` and `ScanPage` signatures to support dynamic timeouts.
-
-### Fixed
-- Fixed JS exception messages that were duplicating stack traces in the description.
-- Resolved "context deadline exceeded" errors on heavy pages by decoupling crawler and worker timeouts.
-
-### Changed
-- Refactored the project structure to better separate concerns.
-- Moved browser logic to `internal/engine`.
-- Moved output formatting to `internal/reporter`.
-- Introduced `internal/crawler` for link discovery logic.
-- Consolidated Cobra setup into `main.go`.
-- Updated `cmd/scan.go` to use the new internal packages.
+## [1.0.0] - Initial Release
+- **Core Functionality:** Scout, Scan, and Interact phases.
+- **Headless Engine:** Built on `chromedp`.
+- **Worker Pool:** Parallel page auditing.

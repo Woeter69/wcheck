@@ -88,18 +88,30 @@ func buildStackTrace(st *runtime.StackTrace) string {
 
 // InteractWithPage finds and clicks all clickable elements to catch interaction errors.
 // It filters out sensitive terms (Delete, Logout, etc.) and refreshes the page after each click.
-func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int, verbose bool, setCurrentElement func(string)) error {
+func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int, verbose bool, addErr func(PageError), setCurrentElement func(string)) error {
 	type candidate struct {
-		XPath string `json:"xpath"`
-		Text  string `json:"text"`
-		ID    string `json:"id"`
+		XPath string  `json:"xpath"`
+		Text  string  `json:"text"`
+		ID    string  `json:"id"`
+		X     float64 `json:"x"`
+		Y     float64 `json:"y"`
 	}
 	var candidates []candidate
 
-	// Step 1: Find all potential clickable elements using a tighter JS selector
+	// Step 1: Wait for hydration and stability
 	err := chromedp.Run(ctx,
+		chromedp.WaitVisible("body", chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second), // Settle time for React/Next.js
+	)
+	if err != nil {
+		return fmt.Errorf("page body not stable: %w", err)
+	}
+
+	// Step 2: Find all potential clickable elements using a broader JS selector
+	err = chromedp.Run(ctx,
 		chromedp.Evaluate(`(function() {
-			const elements = Array.from(document.querySelectorAll('button, a, .btn, input[type="submit"], input[type="button"], [role="button"]'));
+			const selector = 'a, button, [role="button"], .btn, .button, input[type="submit"]';
+			const elements = Array.from(document.querySelectorAll(selector));
 			const seenText = new Set();
 			const result = [];
 			
@@ -115,20 +127,29 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 				}
 			}
 
-			for (const el of elements) {
+			function isVisible(el) {
+				if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
 				const style = window.getComputedStyle(el);
-				if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
-				if (style.cursor !== 'pointer') continue;
+				if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || style.pointerEvents === 'none') return false;
+				const rect = el.getBoundingClientRect();
+				const vWidth = window.innerWidth || document.documentElement.clientWidth;
+				const vHeight = window.innerHeight || document.documentElement.clientHeight;
+				return !(rect.right < 0 || rect.bottom < 0 || rect.left > vWidth || rect.top > vHeight);
+			}
 
+			for (const el of elements) {
+				if (!isVisible(el)) continue;
 				const text = (el.innerText || el.value || "").trim();
-				// Deduplicate by text to avoid clicking mobile/desktop duplicates
 				if (text && seenText.has(text)) continue;
 				if (text) seenText.add(text);
 
+				const rect = el.getBoundingClientRect();
 				result.push({
 					xpath: getXPath(el),
 					text: text.substring(0, 30),
-					id: el.id || ""
+					id: el.id || "",
+					x: rect.left + rect.width / 2,
+					y: rect.top + rect.height / 2
 				});
 			}
 			return result;
@@ -139,18 +160,22 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 	}
 
 	if verbose {
-		fmt.Printf("\n[DEBUG] Smarter Monkey: Found %d unique interactive elements on %s\n", len(candidates), url)
+		fmt.Printf("\n[DEBUG] Smarter Monkey: Found %d unique visible interactive elements on %s\n", len(candidates), url)
+	}
+
+	if len(candidates) == 0 {
+		return fmt.Errorf("no visible interactive elements found")
 	}
 
 	safetyTerms := []string{"logout", "delete", "remove", "sign out", "signout", "clear", "destroy"}
-	
 	count := 0
+	var interactionErrors int
+
 	for _, cand := range candidates {
 		if count >= maxClicks {
 			break
 		}
 
-		// Safety Filter
 		skip := false
 		lowerText := strings.ToLower(cand.Text)
 		for _, term := range safetyTerms {
@@ -159,7 +184,6 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 				break
 			}
 		}
-
 		if skip {
 			continue
 		}
@@ -174,28 +198,41 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 		
 		setCurrentElement(info)
 		count++
-
 		if verbose {
 			fmt.Printf("[DEBUG] Monkey: Testing [%s] (%d/%d)\n", info, count, len(candidates))
 		}
 
-		// Use a tighter 3s timeout for each click
-		clickCtx, clickCancel := context.WithTimeout(ctx, 3*time.Second)
-		
-		// Perform Scroll and Click
-		_ = chromedp.Run(clickCtx,
+		// Click with strict sub-context
+		clickCtx, clickCancel := context.WithTimeout(ctx, 5*time.Second)
+		err = chromedp.Run(clickCtx,
 			chromedp.ScrollIntoView(cand.XPath, chromedp.BySearch),
-			chromedp.Click(cand.XPath, chromedp.BySearch),
-			chromedp.Sleep(300*time.Millisecond),
-			// Reset quickly
+			chromedp.MouseClickXY(cand.X, cand.Y),
+			chromedp.Sleep(500*time.Millisecond),
+		)
+		
+		if err != nil {
+			interactionErrors++
+			addErr(PageError{
+				Type:    TypeErrorInteraction,
+				Message: fmt.Sprintf("Interaction failed on [%s]: %v", info, err),
+			})
+			if verbose {
+				fmt.Printf("[DEBUG] [FAIL] Interaction failed on [%s]: %v\n", info, err)
+			}
+		}
+
+		// Reset page state
+		_ = chromedp.Run(ctx,
 			chromedp.Navigate(url),
 			chromedp.WaitReady("body", chromedp.ByQuery),
 		)
-		
 		clickCancel()
 		setCurrentElement("")
 	}
 
+	if interactionErrors > 0 {
+		return fmt.Errorf("%d interactions failed (timeouts or errors)", interactionErrors)
+	}
 	return nil
 }
 
@@ -225,7 +262,7 @@ func (e *Engine) ScanPage(url string, verbose bool, timeout time.Duration, inter
 		}
 		errors = append(errors, err)
 		mu.Unlock()
-		if verbose {
+		if verbose && err.Type != TypeErrorInteraction {
 			fmt.Printf("\n[DEBUG] Listener caught %s: %s\n", err.Type, err.Message)
 		}
 	}
@@ -241,9 +278,7 @@ func (e *Engine) ScanPage(url string, verbose bool, timeout time.Duration, inter
 					msg = strings.Split(desc, "\n")[0]
 				}
 			}
-			
 			stack := buildStackTrace(ev.ExceptionDetails.StackTrace)
-
 			addErr(PageError{
 				Type:       TypeErrorJS,
 				Message:    msg,
@@ -271,11 +306,6 @@ func (e *Engine) ScanPage(url string, verbose bool, timeout time.Duration, inter
 				}
 			}
 			msg := strings.Join(msgParts, " ")
-
-			if verbose {
-				fmt.Printf("\n[DEBUG] Console %s: %s\n", ev.Type, msg)
-			}
-
 			if ev.Type == runtime.APITypeError {
 				addErr(PageError{
 					Type:    TypeErrorConsole,
@@ -285,10 +315,7 @@ func (e *Engine) ScanPage(url string, verbose bool, timeout time.Duration, inter
 
 		case *network.EventResponseReceived:
 			if ev.Response.Status >= 400 {
-				msg := fmt.Sprintf("%d - %s", ev.Response.Status, ev.Response.URL)
-				if ev.Response.Status == 429 {
-					msg = fmt.Sprintf("⚠️ Rate Limited (429): %s", ev.Response.URL)
-				}
+				msg := fmt.Sprintf("HTTP %d - %s", ev.Response.Status, ev.Response.URL)
 				addErr(PageError{
 					Type:    TypeErrorNetwork,
 					Message: msg,
@@ -297,52 +324,68 @@ func (e *Engine) ScanPage(url string, verbose bool, timeout time.Duration, inter
 			}
 
 		case *network.EventLoadingFailed:
-			if ev.Canceled {
-				return
+			if !ev.Canceled {
+				addErr(PageError{
+					Type:    TypeErrorNetwork,
+					Message: fmt.Sprintf("Network Error: %s (%s)", ev.ErrorText, ev.Type),
+				})
 			}
-			addErr(PageError{
-				Type:    TypeErrorNetwork,
-				Message: fmt.Sprintf("%s (%s)", ev.ErrorText, ev.Type),
-			})
 		}
 	})
 
-	// Step 1: Execute scan: Enable domains, Navigate, Wait, and Settle
+	// Step 1: Execute scan: Enable domains, Navigate with Backoff
 	err := chromedp.Run(ctx,
 		network.Enable(),
 		runtime.Enable(),
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			if _, err := debugger.Enable().Do(ctx); err != nil {
+			_, err := debugger.Enable().Do(ctx)
+			if err != nil {
 				return err
 			}
 			return debugger.SetAsyncCallStackDepth(32).Do(ctx)
 		}),
 		page.Enable(),
-		chromedp.Navigate(url),
-		// Wait for the page to be ready and let the CPU settle briefly to catch post-load JS
-		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Sleep(1*time.Second),
 	)
-
 	if err != nil {
 		return nil, err
 	}
 
+	// Exponential Backoff for initial navigation
+	maxRetries := 3
+	var navErr error
+	for i := 0; i < maxRetries; i++ {
+		navErr = chromedp.Run(ctx,
+			chromedp.Navigate(url),
+			chromedp.WaitReady("body", chromedp.ByQuery),
+		)
+		if navErr == nil {
+			break
+		}
+		if i < maxRetries-1 {
+			time.Sleep(time.Duration(1<<uint(i)) * time.Second)
+		}
+	}
+	if navErr != nil {
+		return nil, navErr
+	}
+
 	// Step 2: Perform Interaction Testing (Optional)
 	if interact {
-		if verbose {
-			fmt.Printf("\n[DEBUG] Starting interaction testing for %s...\n", url)
-		}
-		
 		mu.Lock()
 		isInteractionPhase = true
 		mu.Unlock()
 		
-		_ = e.InteractWithPage(ctx, url, maxClicks, verbose, func(info string) {
+		err := e.InteractWithPage(ctx, url, maxClicks, verbose, addErr, func(info string) {
 			mu.Lock()
 			currentElement = info
 			mu.Unlock()
 		})
+		if err != nil {
+			addErr(PageError{
+				Type:    TypeErrorInteraction,
+				Message: err.Error(),
+			})
+		}
 		
 		mu.Lock()
 		isInteractionPhase = false
@@ -355,6 +398,7 @@ func (e *Engine) ScanPage(url string, verbose bool, timeout time.Duration, inter
 	copy(res, errors)
 	return res, nil
 }
+
 // ExtractLinks finds all <a> tags and returns their href attributes.
 // It uses a fallback strategy: if the body doesn't appear in time, it still tries to scrape what's there.
 func (e *Engine) ExtractLinks(url string, timeout time.Duration, verbose bool) ([]string, error) {
@@ -374,11 +418,25 @@ func (e *Engine) ExtractLinks(url string, timeout time.Duration, verbose bool) (
 	defer cancel()
 
 	var hrefs []string
-	// Step 1: Navigate and wait for DOM ready (much faster than WaitVisible)
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(url),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-	)
+	// Step 1: Navigate with Backoff and wait for DOM ready (much faster than WaitVisible)
+	maxRetries := 3
+	var navErr error
+	for i := 0; i < maxRetries; i++ {
+		navErr = chromedp.Run(ctx,
+			chromedp.Navigate(url),
+			chromedp.WaitReady("body", chromedp.ByQuery),
+		)
+		if navErr == nil {
+			break
+		}
+		if i < maxRetries-1 {
+			backoff := time.Duration(1<<uint(i)) * time.Second
+			if verbose {
+				fmt.Printf("[DEBUG] Scout navigation failed, retrying in %v: %v\n", backoff, navErr)
+			}
+			time.Sleep(backoff)
+		}
+	}
 
 	// Step 2: Attempt extraction regardless of Step 1 success (Fallback)
 	errEval := chromedp.Run(ctx,
@@ -386,13 +444,13 @@ func (e *Engine) ExtractLinks(url string, timeout time.Duration, verbose bool) (
 	)
 
 	if errEval != nil {
-		if err != nil {
-			return nil, fmt.Errorf("link extraction failed: target page took too long to respond and fallback failed: %w", err)
+		if navErr != nil {
+			return nil, fmt.Errorf("link extraction failed: target page took too long to respond and fallback failed: %w", navErr)
 		}
 		return nil, fmt.Errorf("link extraction fallback failed: %w", errEval)
 	}
 
-	if err != nil && verbose {
+	if navErr != nil && verbose {
 		fmt.Printf("\n[DEBUG] Scout: Body wait timed out, but extracted %d links from partial DOM\n", len(hrefs))
 	}
 

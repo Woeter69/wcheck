@@ -128,9 +128,17 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 			}
 
 			function isVisible(el) {
+				// We still need to filter elements with no size
 				if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
+				
 				const style = window.getComputedStyle(el);
-				if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || style.pointerEvents === 'none') return false;
+				// Filter if clearly hidden
+				if (style.display === 'none' || style.visibility === 'hidden') return false;
+				
+				// Allow slightly transparent elements (some sites use 0.1 for effects)
+				if (parseFloat(style.opacity) === 0) return false;
+				
+				// Ensure it is on screen
 				const rect = el.getBoundingClientRect();
 				const vWidth = window.innerWidth || document.documentElement.clientWidth;
 				const vHeight = window.innerHeight || document.documentElement.clientHeight;
@@ -201,25 +209,27 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 		if verbose {
 			fmt.Printf("[DEBUG] Monkey: Testing [%s] (%d/%d)\n", info, count, len(candidates))
 		}
-
 		// Click with strict sub-context
 		clickCtx, clickCancel := context.WithTimeout(ctx, 5*time.Second)
 		err = chromedp.Run(clickCtx,
 			chromedp.ScrollIntoView(cand.XPath, chromedp.BySearch),
-			chromedp.MouseClickXY(cand.X, cand.Y),
+			chromedp.Sleep(500*time.Millisecond),
+			chromedp.Click(cand.XPath, chromedp.BySearch),
 			chromedp.Sleep(500*time.Millisecond),
 		)
-		
-		if err != nil {
-			interactionErrors++
-			addErr(PageError{
-				Type:    TypeErrorInteraction,
-				Message: fmt.Sprintf("Interaction failed on [%s]: %v", info, err),
-			})
-			if verbose {
-				fmt.Printf("[DEBUG] [FAIL] Interaction failed on [%s]: %v\n", info, err)
-			}
-		}
+
+if err != nil {
+	interactionErrors++
+	addErr(PageError{
+		Type:    TypeErrorInteraction,
+		Message: fmt.Sprintf("Interaction failed on [%s]: %v", info, err),
+	})
+	if verbose {
+		fmt.Printf("[DEBUG] [FAIL] Interaction failed on [%s]: %v\n", info, err)
+	}
+} else if verbose {
+	fmt.Printf("[DEBUG] [OK] Successfully clicked [%s]\n", info)
+}
 
 		// Reset page state
 		_ = chromedp.Run(ctx,
@@ -408,10 +418,10 @@ func (e *Engine) ExtractLinks(url string, timeout time.Duration, verbose bool) (
 	ctx, cancel := chromedp.NewContext(e.AllocCtx)
 	defer cancel()
 
-	// Use user-provided timeout with a 45s minimum for the scraper
+	// Use user-provided timeout with a 120s minimum for the scraper
 	scraperTimeout := timeout
-	if scraperTimeout < 45*time.Second {
-		scraperTimeout = 45 * time.Second
+	if scraperTimeout < 120*time.Second {
+		scraperTimeout = 120 * time.Second
 	}
 
 	ctx, cancel = context.WithTimeout(ctx, scraperTimeout)

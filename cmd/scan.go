@@ -122,7 +122,7 @@ var scanCmd = &cobra.Command{
 	},
 }
 
-// RegisterCommands adds scanCmd and other commands to the root command
+// RegisterCommands adds scanCmd to the root command
 func RegisterCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(scanCmd)
 	scanCmd.Flags().IntVarP(&workers, "workers", "w", 5, "Number of parallel workers")
@@ -131,8 +131,6 @@ func RegisterCommands(rootCmd *cobra.Command) {
 	scanCmd.Flags().BoolVarP(&interact, "interact", "i", false, "Enable automatic interaction testing")
 	scanCmd.Flags().IntVarP(&maxClicks, "max-clicks", "m", 20, "Maximum number of elements to click on each page")
 	scanCmd.Flags().IntVarP(&delay, "delay", "d", 0, "Delay in seconds between page scans")
-
-	RegisterInteract(rootCmd)
 }
 
 func hasRateLimit(errors []engine.PageError) bool {

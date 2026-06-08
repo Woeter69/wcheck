@@ -52,7 +52,8 @@ func NewEngine() *Engine {
 		chromedp.NoSandbox,
 		chromedp.DisableGPU,
 		chromedp.Flag("disable-dev-shm-usage", true),
-		chromedp.Flag("max-connection-per-browser", "2"),
+		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("max-connections-per-browser", "10"),
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -251,12 +252,12 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 // ScanPage navigates to a URL and monitors for errors
 func (e *Engine) ScanPage(url string, verbose bool, timeout time.Duration, interact bool, maxClicks int) ([]PageError, error) {
 	// Create a new tab/context for this specific scan
-	ctx, cancel := chromedp.NewContext(e.AllocCtx)
-	defer cancel()
+	ctx, cancelTab := chromedp.NewContext(e.AllocCtx)
+	defer cancelTab()
 
 	// Use the provided timeout for the entire page lifecycle
-	ctx, cancel = context.WithTimeout(ctx, timeout)
-	defer cancel()
+	ctx, cancelTimeout := context.WithTimeout(ctx, timeout)
+	defer cancelTimeout()
 
 	var (
 		mu                 sync.Mutex
@@ -430,17 +431,12 @@ func (e *Engine) ExtractLinks(url string, timeout time.Duration, verbose bool) (
 	if verbose {
 		fmt.Printf("\n[DEBUG] Scout starting (Interaction disabled for this phase) on %s\n", url)
 	}
-	ctx, cancel := chromedp.NewContext(e.AllocCtx)
-	defer cancel()
+	ctx, cancelTab := chromedp.NewContext(e.AllocCtx)
+	defer cancelTab()
 
-	// Use user-provided timeout with a 120s minimum for the scraper
-	scraperTimeout := timeout
-	if scraperTimeout < 120*time.Second {
-		scraperTimeout = 120 * time.Second
-	}
-
-	ctx, cancel = context.WithTimeout(ctx, scraperTimeout)
-	defer cancel()
+	// Use user-provided timeout for the scraper
+	ctx, cancelTimeout := context.WithTimeout(ctx, timeout)
+	defer cancelTimeout()
 
 	var hrefs []string
 	// Step 1: Navigate with Backoff and wait for DOM ready (much faster than WaitVisible)
@@ -455,6 +451,12 @@ func (e *Engine) ExtractLinks(url string, timeout time.Duration, verbose bool) (
 			break
 		}
 		if i < maxRetries-1 {
+			// Check if context is already done before sleeping
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("link extraction timed out during navigation: %w", ctx.Err())
+			default:
+			}
 			backoff := time.Duration(1<<uint(i)) * time.Second
 			if verbose {
 				fmt.Printf("[DEBUG] Scout navigation failed, retrying in %v: %v\n", backoff, navErr)

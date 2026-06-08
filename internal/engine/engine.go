@@ -116,33 +116,28 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 			const result = [];
 			
 			function getXPath(element) {
-				if (element.id !== '') return 'id("' + element.id + '")';
-				if (element === document.body) return 'BODY';
+				if (element.id !== '') return '//*[@id="' + element.id + '"]';
+				if (element === document.body) return '/html/body';
 				var ix = 0;
 				var siblings = element.parentNode.childNodes;
 				for (var i = 0; i < siblings.length; i++) {
 					var sibling = siblings[i];
-					if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName + '[' + (ix + 1) + ']';
+					if (sibling === element) return getXPath(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
 					if (sibling.nodeType === 1 && sibling.tagName === element.tagName) ix++;
 				}
 			}
 
 			function isVisible(el) {
-				// We still need to filter elements with no size
-				if (el.offsetWidth <= 0 || el.offsetHeight <= 0) return false;
+				const rect = el.getBoundingClientRect();
+				if (rect.width === 0 || rect.height === 0) return false;
 				
 				const style = window.getComputedStyle(el);
-				// Filter if clearly hidden
-				if (style.display === 'none' || style.visibility === 'hidden') return false;
+				if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
 				
-				// Allow slightly transparent elements (some sites use 0.1 for effects)
-				if (parseFloat(style.opacity) === 0) return false;
-				
-				// Ensure it is on screen
-				const rect = el.getBoundingClientRect();
-				const vWidth = window.innerWidth || document.documentElement.clientWidth;
-				const vHeight = window.innerHeight || document.documentElement.clientHeight;
-				return !(rect.right < 0 || rect.bottom < 0 || rect.left > vWidth || rect.top > vHeight);
+				// Check if element or its parent is hidden
+				if (el.offsetParent === null && style.position !== 'fixed') return false;
+
+				return true;
 			}
 
 			for (const el of elements) {
@@ -209,35 +204,42 @@ func (e *Engine) InteractWithPage(ctx context.Context, url string, maxClicks int
 		if verbose {
 			fmt.Printf("[DEBUG] Monkey: Testing [%s] (%d/%d)\n", info, count, len(candidates))
 		}
+
+		// Reset errors for this specific interaction to avoid cross-contamination
+		// Actually, we don't clear all errors, but we mark the start of THIS interaction
+		
 		// Click with strict sub-context
-		clickCtx, clickCancel := context.WithTimeout(ctx, 5*time.Second)
+		clickCtx, clickCancel := context.WithTimeout(ctx, 10*time.Second)
 		err = chromedp.Run(clickCtx,
 			chromedp.ScrollIntoView(cand.XPath, chromedp.BySearch),
-			chromedp.Sleep(500*time.Millisecond),
-			chromedp.Click(cand.XPath, chromedp.BySearch),
-			chromedp.Sleep(500*time.Millisecond),
+			chromedp.Sleep(200*time.Millisecond),
+			chromedp.MouseClickXY(cand.X, cand.Y),
+			chromedp.Sleep(1000*time.Millisecond), // Wait for async effects
 		)
 
-if err != nil {
-	interactionErrors++
-	addErr(PageError{
-		Type:    TypeErrorInteraction,
-		Message: fmt.Sprintf("Interaction failed on [%s]: %v", info, err),
-	})
-	if verbose {
-		fmt.Printf("[DEBUG] [FAIL] Interaction failed on [%s]: %v\n", info, err)
-	}
-} else if verbose {
-	fmt.Printf("[DEBUG] [OK] Successfully clicked [%s]\n", info)
-}
+		if err != nil {
+			interactionErrors++
+			addErr(PageError{
+				Type:        TypeErrorInteraction,
+				Message:     fmt.Sprintf("Interaction failed on [%s]: %v", info, err),
+				ElementInfo: info,
+			})
+			if verbose {
+				fmt.Printf("[DEBUG] [FAIL] Interaction failed on [%s]: %v\n", info, err)
+			}
+		} else if verbose {
+			fmt.Printf("[DEBUG] [OK] Successfully clicked [%s]\n", info)
+		}
 
-		// Reset page state
+		// Reset page state - navigate back and wait for it to settle
+		// We don't want "Immediate Console Error" from the reload to be attributed to the PREVIOUS click
+		setCurrentElement("")
 		_ = chromedp.Run(ctx,
 			chromedp.Navigate(url),
 			chromedp.WaitReady("body", chromedp.ByQuery),
+			chromedp.Sleep(500*time.Millisecond),
 		)
 		clickCancel()
-		setCurrentElement("")
 	}
 
 	if interactionErrors > 0 {
@@ -265,13 +267,26 @@ func (e *Engine) ScanPage(url string, verbose bool, timeout time.Duration, inter
 
 	addErr := func(err PageError) {
 		mu.Lock()
-		if isInteractionPhase && (err.Type == TypeErrorJS || err.Type == TypeErrorConsole) {
-			err.Type = TypeErrorInteraction
-			err.ElementInfo = currentElement
-			err.Message = fmt.Sprintf("Interaction with [%s] triggered: %s", currentElement, err.Message)
+		defer mu.Unlock()
+
+		// Deduplicate: Don't add exactly the same error twice
+		for _, existing := range errors {
+			if existing.Type == err.Type && existing.Message == err.Message && existing.URL == err.URL && existing.Line == err.Line {
+				return
+			}
 		}
+
+		if isInteractionPhase && currentElement != "" {
+			if err.Type == TypeErrorJS || err.Type == TypeErrorConsole || err.Type == TypeErrorNetwork {
+				err.Type = TypeErrorInteraction
+				err.ElementInfo = currentElement
+				err.Message = fmt.Sprintf("Interaction with [%s] triggered: %s", currentElement, err.Message)
+			} else if err.Type == TypeErrorInteraction && err.ElementInfo == "" {
+				err.ElementInfo = currentElement
+			}
+		}
+
 		errors = append(errors, err)
-		mu.Unlock()
 		if verbose && err.Type != TypeErrorInteraction {
 			fmt.Printf("\n[DEBUG] Listener caught %s: %s\n", err.Type, err.Message)
 		}

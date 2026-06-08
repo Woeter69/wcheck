@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **Engine & Interaction Reliability:**
+  - **Error Deduplication:** Implemented a robust deduplication mechanism to prevent the same error from being reported multiple times.
+  - **Precise Attribution:** Improved the logic for attributing errors during the interaction phase, ensuring initial page load errors are no longer incorrectly flagged as "Broken Interactions".
+  - **Interaction Isolation:** Added state resets and settle times between clicks to prevent cross-contamination of errors between different interactive elements.
+  - **Smarter Visibility Check:** Refined the `isVisible` logic to better handle modern CSS (opacity, offsetParent) and ensure only truly interactive elements are targeted.
+  - **Network Error Sniffing:** Improved capturing of HTTP 4xx/5xx errors during both the crawl and interaction phases.
+
+### Added
+- **Professional Documentation Suite:**
+  - `README.md`: New sleek project overview and feature highlights.
+  - `INSTALL.md`: Detailed installation instructions and source builds.
+  - `USAGE.md`: Comprehensive breakdown of all CLI flags and CI/CD examples.
+  - `CONTRIBUTING.md`: Developer-focused guide on project structure.
+
 ## [1.0.1] - 2026-03-03
 
 ### Fixed

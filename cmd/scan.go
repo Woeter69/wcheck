@@ -131,6 +131,8 @@ func RegisterCommands(rootCmd *cobra.Command) {
 	scanCmd.Flags().BoolVarP(&interact, "interact", "i", false, "Enable automatic interaction testing")
 	scanCmd.Flags().IntVarP(&maxClicks, "max-clicks", "m", 20, "Maximum number of elements to click on each page")
 	scanCmd.Flags().IntVarP(&delay, "delay", "d", 0, "Delay in seconds between page scans")
+
+	RegisterInteract(rootCmd)
 }
 
 func hasRateLimit(errors []engine.PageError) bool {

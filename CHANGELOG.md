@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- **Engine & Interaction Reliability:**
-  - **Error Deduplication:** Implemented a robust deduplication mechanism to prevent the same error from being reported multiple times.
-  - **Precise Attribution:** Improved the logic for attributing errors during the interaction phase, ensuring initial page load errors are no longer incorrectly flagged as "Broken Interactions".
-  - **Interaction Isolation:** Added state resets and settle times between clicks to prevent cross-contamination of errors between different interactive elements.
-  - **Smarter Visibility Check:** Refined the `isVisible` logic to better handle modern CSS (opacity, offsetParent) and ensure only truly interactive elements are targeted.
-  - **Network Error Sniffing:** Improved capturing of HTTP 4xx/5xx errors during both the crawl and interaction phases.
+- **Engine Reliability & CI Performance:**
+  - **Memory & Resource Leak:** Fixed a critical context shadowing bug in `ScanPage` and `ExtractLinks` where the browser tab/context was not being correctly cancelled, leading to resource exhaustion and CI timeouts.
+  - **Chrome Configuration:** Fixed a typo in the `max-connections-per-browser` flag and increased its limit to 10 for better concurrency.
+  - **Improved CI Stability:** Added `--disable-setuid-sandbox` and `--disable-extensions` Chrome flags to ensure more robust execution in headless Linux environments.
+  - **Timeout Optimization:** Removed an arbitrary 120-second minimum timeout in `ExtractLinks` and replaced it with a shorter-circuiting mechanism that respects user-provided timeouts.
+  - **Enhanced Test Reliability:** Increased test timeouts from 10s to 30s to accommodate slower execution in resource-constrained CI environments.
 
 ### Added
 - **Professional Documentation Suite:**

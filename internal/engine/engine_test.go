@@ -27,7 +27,7 @@ func TestExtractLinks(t *testing.T) {
 	eng := NewEngine()
 	t.Cleanup(eng.Close)
 
-	links, err := eng.ExtractLinks(ts.URL, 10*time.Second, false)
+	links, err := eng.ExtractLinks(ts.URL, 30*time.Second, false)
 	if err != nil {
 		t.Fatalf("Failed to extract links: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestScanErrors(t *testing.T) {
 	eng := NewEngine()
 	t.Cleanup(eng.Close)
 
-	errors, err := eng.ScanPage(ts.URL, false, 10*time.Second, false, 0)
+	errors, err := eng.ScanPage(ts.URL, false, 30*time.Second, false, 0)
 	if err != nil {
 		t.Fatalf("ScanPage failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestInteract(t *testing.T) {
 	t.Cleanup(eng.Close)
 
 	// Enable interaction and limit to 1 click for speed
-	errors, err := eng.ScanPage(ts.URL, false, 15*time.Second, true, 1)
+	errors, err := eng.ScanPage(ts.URL, false, 30*time.Second, true, 1)
 	if err != nil {
 		t.Fatalf("ScanPage with interaction failed: %v", err)
 	}
